@@ -5,12 +5,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 //import 'package:wristband/live_tracking_screen.dart';
 import 'firebase_options.dart'; //firebase realtime database connection
-import 'package:flutter_map/flutter_map.dart'; //for maps screen
+//import 'package:flutter_map/flutter_map.dart'; //for maps screen
 import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared Preferences
 import 'package:audioplayers/audioplayers.dart';
-//import 'sensor_data_screen.dart';
-//import 'package:latlong2/'; inaayos pa to wait lang
-//import 'live_tracking_screen.dart'; wag pansinin
+import 'package:geocoding/geocoding.dart';
+
 
 // Firebase connection details
 const String firebaseHost = "riskband-7551a-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -61,11 +60,10 @@ void setupHealthDataListener(Function(Map<String, dynamic>) onDataReceived) {
       onDataReceived({
         'heartRate': latestEntry['heart_rate'] ?? 0,
         'spo2': latestEntry['spo2'] ?? 0,
+        'latitude': latestEntry['latitude'] ?? 0.0, // Fetch latitude
+        'longitude': latestEntry['longitude'] ?? 0.0, // Fetch longitude
         //'battery': latestEntry['battery'] ?? 0,   // TO BE ADDED
-        'latitude': latestEntry['latitude'] ?? "Latitude not available",
-        'longitude': latestEntry['longitude'] ?? "Longitude not available",
-        //'location': "${latestEntry['latitude']}, ${latestEntry['longitude']}", // Combine latitude and longitude
-      
+        //'location': latestEntry['location'] ?? "Location not available",
       });
     } else {
       print("No data found at the specified reference for health data.");
@@ -73,9 +71,8 @@ void setupHealthDataListener(Function(Map<String, dynamic>) onDataReceived) {
         'heartRate': 0,
         'spo2': 0,
         'battery': 0,
-        'latitude': "Latitude not available",
-        'longitude': "Longitude not available",
-       // 'location': "Location not available",
+        'latitude': 0.0,
+        'longitude': 0.0,
       });
     }
   });
@@ -391,25 +388,24 @@ class RelativeMonitoringScreen extends StatefulWidget {
 }
 
 class _RelativeMonitoringScreenState extends State<RelativeMonitoringScreen> {
-  late int heartRate;
-  late int spo2;
+  int heartRate = 0; // Initialize with default value
+  int spo2 = 0; // Initialize with default value
+  double latitude = 0.0; // Initialize with default value
+  double longitude = 0.0; // Initialize with default value // Add longitude
   //late int battery; TO BE ADDED
-  late double latitude = 0.0; // Initialize with a default value
-  late double longitude = 0.0; // Initialize with a default value
   //late String location;
 
-  @override
+
+   @override
   void initState() {
     super.initState();
     setupHealthDataListener((data) {
       setState(() {
         heartRate = data['heartRate'];
         spo2 = data['spo2'];
+        latitude = data['latitude']; // Update latitude
+        longitude = data['longitude']; // Update longitude
         //battery = data['battery'];
-        latitude = (data['latitude'] as num).toDouble(); // Cast to double
-        longitude = (data['longitude'] as num).toDouble(); // Cast to double
-      
-       // location = "${data['latitude']}, ${data['longitude']}"; // Combine latitude and longitude
         //location = data['location'];
       });
     });
@@ -495,17 +491,17 @@ class _RelativeMonitoringScreenState extends State<RelativeMonitoringScreen> {
             ),
             SizedBox(height: 20),
             ElevatedButton(
-                onPressed: () {
-            _showEmergencyAlert(context, heartRate, spo2, latitude, longitude);
-           },
-            style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            ),
-            ),
-             child: Text("Emergency Alert"),  
+              onPressed: () {
+                _showEmergencyAlert(context, heartRate, spo2, latitude, longitude);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text("Emergency Alert"),
             ),
             SizedBox(height: 30),
             Row(
@@ -767,25 +763,24 @@ class PatientMonitoringScreen extends StatefulWidget {
 }
 
 class _PatientMonitoringScreenState extends State<PatientMonitoringScreen> {
-  late int heartRate;
-  late int spo2;
+  int heartRate = 0; // Initialize with default value
+  int spo2 = 0; // Initialize with default value
+  double latitude = 0.0; // Initialize with default value
+  double longitude = 0.0; // Initialize with default value
   //late int battery; // TO BE ADDED
-  late double latitude = 0.0; // Initialize with a default value
-  late double longitude = 0.0; // Initialize with a default value
- // late String location;
+  //late String location;
 
 
-  @override
+   @override
   void initState() {
     super.initState();
     setupHealthDataListener((data) {
       setState(() {
         heartRate = data['heartRate'];
         spo2 = data['spo2'];
+        latitude = data['latitude']; // Update latitude
+        longitude = data['longitude']; // Update longitude
         //battery = data['battery'];
-        latitude = (data['latitude'] as num).toDouble(); // Cast to double
-        longitude = (data['longitude'] as num).toDouble(); // Cast to double
-        //location = "${data['latitude']}, ${data['longitude']}"; // Combine latitude and longitude
         //location = data['location'];
       });
     });
@@ -912,19 +907,31 @@ void playAudioFromUrl(AudioPlayer player) async {
   await player.play(AssetSource('alert_sound.mp3'));
 }
 
-void _showEmergencyAlert(BuildContext context, int heartRate, int spo2, double latitude, double longitude) {
+Future<String> getAddressFromLatLng(double latitude, double longitude) async {
+  try {
+    List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
+    Placemark place = placemarks[0]; // Get the first placemark
+    return "${place.street}, ${place.locality}, ${place.postalCode}, ${place.country}"; // Format the address
+  } catch (e) {
+    print(e);
+    return "Location not available"; // Return a default message in case of error
+  }
+}
+
+void _showEmergencyAlert(BuildContext context, int heartRate, int spo2, double latitude, double longitude) async {
+  String address = await getAddressFromLatLng(latitude, longitude); // Get the address
+
   showDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
       final AudioPlayer player = AudioPlayer();
-      // Start vibration pattern and play audio simultaneously
       Vibration.vibrate(pattern: [500, 1000, 500, 1000], repeat: 0);
       playAudioFromUrl(player);
-
+      
       return AlertDialog(
         content: Text(
-          "Patient's heart rate has risen to $heartRate BPM and $spo2 oxygen level. Possible heart attack detected! Patient's location: latitude is ${latitude.toString()}, longitude is ${longitude.toString()}",
+          "Patient's heart rate has risen to $heartRate BPM and $spo2 oxygen level. Possible heart attack detected! Patient's location: $address. latitude is: $latitude and longitude is: $longitude",
           style: TextStyle(fontSize: 18),
         ),
         actions: [
