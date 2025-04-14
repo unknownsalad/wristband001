@@ -3,73 +3,17 @@ import 'package:vibration/vibration.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 //import 'package:wristband/live_tracking_screen.dart';
 import 'firebase_options.dart'; //firebase realtime database connection
-import 'package:flutter_map/flutter_map.dart'; //for maps screen
+//import 'package:flutter_map/flutter_map.dart'; //for maps screen
 import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared Preferences
 import 'package:audioplayers/audioplayers.dart';
-//import 'sensor_data_screen.dart';
-//import 'package:latlong2/'; inaayos pa to wait lang
-//import 'live_tracking_screen.dart'; wag pansinin
+import 'package:geocoding/geocoding.dart';
+
 
 // Firebase connection details
 const String firebaseHost = "riskband-7551a-default-rtdb.asia-southeast1.firebasedatabase.app";
 const String firebaseAuth = "fJ0y6TGCa730ewDi3ols8we5DWWGZjHMeeodcOQF";
-
-/*buburahin
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();  // ✅ Initialize Firebase
-  runApp(MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Emergency Response Wristband',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: SensorDataScreen(),  // ✅ Set the SensorDataScreen as the home screen
-    );
-  }
-}
-*/
-
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
-
-void initializeNotifications() async {
-  final AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('app_icon');
-  final InitializationSettings initializationSettings =
-      InitializationSettings(android: initializationSettingsAndroid);
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-}
-
-Future<void> showPersistentNotification(String message) async {
-  const AndroidNotificationDetails androidPlatformChannelSpecifics =
-      AndroidNotificationDetails(
-    'emergency_channel_id',
-    'Emergency Alerts',
-    channelDescription: 'Notifications for emergency alerts',
-    importance: Importance.max,
-    priority: Priority.high,
-    ticker: 'ticker',
-    playSound: true,
-    ongoing: true, // Keeps the notification showing until manually dismissed
-  );
-  const NotificationDetails platformChannelSpecifics =
-      NotificationDetails(android: androidPlatformChannelSpecifics);
-
-  await flutterLocalNotificationsPlugin.show(
-    0,
-    'Emergency Alert',
-    message,
-    platformChannelSpecifics,
-  );
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -101,45 +45,6 @@ void main() async {
   runApp(MyApp(userType: userType, relativeName: relativeName, patientName: patientName, contact: contact));
 }
 
-// Function to retrieve data from Firebase
-/*Future<Map<String, dynamic>> retrieveData() async {
-  DatabaseReference refHealth = FirebaseDatabase.instance.ref("health_data").limitToLast(1); // Reference to health data
-
-  try {
-    // Fetch health data
-    DatabaseEvent eventHealth = await refHealth.once();
-    DataSnapshot snapshotHealth = eventHealth.snapshot;
-
-    Map<String, dynamic> healthData = {
-      'heartRate': 0,
-      'spo2': 0,
-      'battery': 0,
-      'location': "Location not available",
-    };
-
-    if (snapshotHealth.exists) {
-      Map<dynamic, dynamic> data = snapshotHealth.value as Map<dynamic, dynamic>;
-      var latestEntry = data.values.last; // Get the latest entry
-      healthData['heartRate'] = latestEntry['heart_rate'] ?? healthData['heartRate']; // Update heart rate
-      healthData['spo2'] = latestEntry['spo2'] ?? healthData['spo2']; // Update SpO2
-      healthData['battery'] = latestEntry['battery'] ?? healthData['battery']; // Update battery
-      healthData['location'] = latestEntry['location'] ?? healthData['location']; // Update location
-    } else {
-      print("No data found at the specified reference for health data.");
-    }
-
-    return healthData;
-
-  } catch (error) {
-    print("Error retrieving data: $error");
-    return {
-      'heartRate': 0,
-      'spo2': 0,
-      'battery': 0,
-      'location': "Location not available",
-    };
-  }
-}*/
 
 // Function to set up a real-time listener for health data
 void setupHealthDataListener(Function(Map<String, dynamic>) onDataReceived) {
@@ -154,6 +59,8 @@ void setupHealthDataListener(Function(Map<String, dynamic>) onDataReceived) {
       onDataReceived({
         'heartRate': latestEntry['heart_rate'] ?? 0,
         'spo2': latestEntry['spo2'] ?? 0,
+        'latitude': latestEntry['latitude'] ?? 0.0, // Fetch latitude
+        'longitude': latestEntry['longitude'] ?? 0.0, // Fetch longitude
         //'battery': latestEntry['battery'] ?? 0,   // TO BE ADDED
         //'location': latestEntry['location'] ?? "Location not available",
       });
@@ -163,7 +70,8 @@ void setupHealthDataListener(Function(Map<String, dynamic>) onDataReceived) {
         'heartRate': 0,
         'spo2': 0,
         'battery': 0,
-        'location': "Location not available",
+        'latitude': 0.0,
+        'longitude': 0.0,
       });
     }
   });
@@ -189,18 +97,12 @@ class MyApp extends StatelessWidget {
         relativeName: relativeName!,
         patientName: patientName!,
         contact: contact!,
-        heartRate: 0, // Placeholder, will be updated from Firebase
-        spo2: 0, // Placeholder, will be updated from Firebase
-        battery: 0, // Placeholder, will be updated from Firebase
       )
           : (userType == 'patient' && patientName != null && relativeName != null && contact != null)
           ? PatientMonitoringScreen(
         patientName: patientName!,
         relativeName: relativeName!,
         relativeContact: contact!,
-        heartRate: 0, // Placeholder, will be updated from Firebase
-        spo2: 0, // Placeholder, will be updated from Firebase
-        battery: 0, // Placeholder, will be updated from Firebase
       )
           : HomePage(),
     );
@@ -361,9 +263,6 @@ class _RelativeScreenState extends State<RelativeScreen> {
           relativeName: relativeName,
           patientName: patientName,
           contact: contactController.text,
-          heartRate: 0,
-          spo2: 0,
-          battery: 0,
         ),
       ),
           (Route<dynamic> route) => false,
@@ -461,17 +360,11 @@ class RelativeMonitoringScreen extends StatefulWidget {
   final String relativeName;
   final String patientName;
   final String contact;
-  final int heartRate;
-  final int spo2;
-  final int battery;
 
   RelativeMonitoringScreen({
     required this.relativeName,
     required this.patientName,
     required this.contact,
-    required this.heartRate,
-    required this.spo2,
-    required this.battery,
   });
 
   @override
@@ -479,41 +372,26 @@ class RelativeMonitoringScreen extends StatefulWidget {
 }
 
 class _RelativeMonitoringScreenState extends State<RelativeMonitoringScreen> {
-  late int heartRate;
-  late int spo2;
+  int heartRate = 0; // Initialize with default value
+  int spo2 = 0; // Initialize with default value
+  double latitude = 0.0; // Initialize with default value
+  double longitude = 0.0; // Initialize with default value // Add longitude
   //late int battery; TO BE ADDED
   //late String location;
 
 
-  /*@override // dito muna baka magamit something
-  void initState() {
-    super.initState();
-    _updateData();
-  }
-
-  // Function to update data from Firebase
-  void _updateData() async {
-    Map<String, dynamic> data = await retrieveData();
+@override
+void initState() {
+  super.initState();
+  setupHealthDataListener((data) {
     setState(() {
       heartRate = data['heartRate'];
       spo2 = data['spo2'];
-      battery = data['battery'];
-      location = data['location'];
+      latitude = data['latitude'];
+      longitude = data['longitude'];
     });
-  }*/
-
-  @override
-  void initState() {
-    super.initState();
-    setupHealthDataListener((data) {
-      setState(() {
-        heartRate = data['heartRate'];
-        spo2 = data['spo2'];
-        //battery = data['battery'];
-        //location = data['location'];
-      });
-    });
-  }
+  });
+}
 
 
   @override
@@ -546,22 +424,19 @@ class _RelativeMonitoringScreenState extends State<RelativeMonitoringScreen> {
                       color: Colors.black,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Column(
-                      children: [
-                        Text(
-                          heartRate > 0 ? "$heartRate ❤️" : "No Heart Rate Data",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 50,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          spo2 > 0 ? "$spo2% SpO2" : "No SpO2 Data",
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                      ],
+              child: Column(
+                children: [
+                  Text(
+                    heartRate > 0 ? "$heartRate ❤️" : "No Heart Rate Data",
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 50,
+                      fontWeight: FontWeight.bold,
                     ),
+                  ),
+                  Text(
+                    spo2 > 0 ? "$spo2% SpO2" : "No SpO2 Data",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ],
               ),
@@ -596,7 +471,7 @@ class _RelativeMonitoringScreenState extends State<RelativeMonitoringScreen> {
             SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
-                _showEmergencyAlert(context, heartRate, spo2, "Location not available");
+                _showEmergencyAlert(context, heartRate, spo2, latitude, longitude);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
@@ -639,6 +514,9 @@ class _RelativeMonitoringScreenState extends State<RelativeMonitoringScreen> {
                 child: Text("Logout"),
               ),
             ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -655,7 +533,7 @@ class FirstAidScreen extends StatelessWidget {
       body: SingleChildScrollView(
         child: Center(
           child: Image.network(
-            'https://scontent.fmnl17-5.fna.fbcdn.net/v/t39.30808-6/487863124_122129889854796066_6702681718512492020_n.jpg?stp=dst-jpg_p552x414_tt6&_nc_cat=102&ccb=1-7&_nc_sid=833d8c&_nc_eui2=AeGTGw4jXci16llfET4ZWVbs6GNk7g2wzuDoY2TuDbDO4BxM9x8wAkcINfs0vzqFK7H_d7CH69GQgls55KV8Lmd6&_nc_ohc=crnKNIn7sZ0Q7kNvwFmy0Zf&_nc_oc=AdlM2kSkv5HpXXcbEMe31YdHDrk73BVYLMuMoj-toQ7-8FXxGlVib5lUoaUaLuTqIS0&_nc_zt=23&_nc_ht=scontent.fmnl17-5.fna&_nc_gid=VhkSo3CLGW-CnBNuoVDiTw&oh=00_AYFQN6RYL9x2n98xbdCYZZw--ZzWN1kRt6wOlnpDSduasg&oe=67F5B8D5',
+            'https://scontent.fmnl17-5.fna.fbcdn.net/   v/t39.30808-6/487863124_122129889854796066_6702681718512492020_n.jpg?stp=dst-jpg_p552x414_tt6&_nc_cat=102&ccb=1-7&_nc_sid=833d8c&_nc_eui2=AeGTGw4jXci16llfET4ZWVbs6GNk7g2wzuDoY2TuDbDO4BxM9x8wAkcINfs0vzqFK7H_d7CH69GQgls55KV8Lmd6&_nc_ohc=crnKNIn7sZ0Q7kNvwFmy0Zf&_nc_oc=AdlM2kSkv5HpXXcbEMe31YdHDrk73BVYLMuMoj-toQ7-8FXxGlVib5lUoaUaLuTqIS0&_nc_zt=23&_nc_ht=scontent.fmnl17-5.fna&_nc_gid=VhkSo3CLGW-CnBNuoVDiTw&oh=00_AYFQN6RYL9x2n98xbdCYZZw--ZzWN1kRt6wOlnpDSduasg&oe=67F5B8D5',
             fit: BoxFit.contain,
           ),
         ),
@@ -753,9 +631,6 @@ class _PatientScreenState extends State<PatientScreen> {
           patientName: patientName,
           relativeName: relativeName,
           relativeContact: relativeContactController.text,
-          heartRate: 0,
-          spo2: 0,
-          battery: 0,
         ),
       ),
           (Route<dynamic> route) => false,
@@ -849,17 +724,11 @@ class PatientMonitoringScreen extends StatefulWidget {
   final String patientName;
   final String relativeName;
   final String relativeContact;
-  final int heartRate;
-  final int spo2;
-  final int battery;
 
   PatientMonitoringScreen({
     required this.patientName,
     required this.relativeName,
     required this.relativeContact,
-    required this.heartRate,
-    required this.spo2,
-    required this.battery,
   });
 
   @override
@@ -867,40 +736,26 @@ class PatientMonitoringScreen extends StatefulWidget {
 }
 
 class _PatientMonitoringScreenState extends State<PatientMonitoringScreen> {
-  late int heartRate;
-  late int spo2;
+  int heartRate = 0; // Initialize with default value
+  int spo2 = 0; // Initialize with default value
+  double latitude = 0.0; // Initialize with default value
+  double longitude = 0.0; // Initialize with default value
   //late int battery; // TO BE ADDED
   //late String location;
 
-  /* @override dito muna baka magamit something
-  void initState() {
-    super.initState();
-    _updateData();
-  }
 
-  // Function to update data from Firebase
-  void _updateData() async {
-    Map<String, dynamic> data = await retrieveData();
+@override
+void initState() {
+  super.initState();
+  setupHealthDataListener((data) {
     setState(() {
       heartRate = data['heartRate'];
       spo2 = data['spo2'];
-      battery = data['battery'];
-      location = data['location'];
+      latitude = data['latitude'];
+      longitude = data['longitude'];
     });
-  }*/
-
-  @override
-  void initState() {
-    super.initState();
-    setupHealthDataListener((data) {
-      setState(() {
-        heartRate = data['heartRate'];
-        spo2 = data['spo2'];
-        //battery = data['battery'];
-        //location = data['location'];
-      });
-    });
-  }
+  });
+}
 
   @override
   Widget build(BuildContext context) {
@@ -932,22 +787,22 @@ class _PatientMonitoringScreenState extends State<PatientMonitoringScreen> {
                       color: Colors.black,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Column(
-                      children: [
-                        Text(
-                          heartRate > 0 ? "$heartRate ❤️" : "No Heart Rate Data",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 50,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          spo2 > 0 ? "$spo2% SpO2" : "No SpO2 Data",
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                      ],
+              child: Column(
+                children: [
+                  Text(
+                    heartRate > 0 ? "$heartRate ❤️" : "No Heart Rate Data",
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 50,
+                      fontWeight: FontWeight.bold,
                     ),
+                  ),
+                  Text(
+                    spo2 > 0 ? "$spo2% SpO2" : "No SpO2 Data",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
                   ),
                   SizedBox(height: 20),
                   FloatingActionButton(
@@ -1023,26 +878,31 @@ void playAudioFromUrl(AudioPlayer player) async {
   await player.play(AssetSource('alert_sound.mp3'));
 }
 
-void _showEmergencyAlert(BuildContext context, int heartRate, int spo2, String location) {
-  final AudioPlayer player = AudioPlayer();
-  // Start vibration pattern and play audio simultaneously
-  Vibration.vibrate(pattern: [500, 1000, 500, 1000], repeat: 0);
-  playAudioFromUrl(player);
+Future<String> getAddressFromLatLng(double latitude, double longitude) async {
+  try {
+    List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
+    Placemark place = placemarks[0]; // Get the first placemark
+    return "${place.street},${place.subLocality}, ${place.locality}, ${place.postalCode}, ${place.country}"; // Format the address
+  } catch (e) {
+    print(e);
+    return "Location not available"; // Return a default message in case of error
+  }
+}
 
-  String alertMessage =
-      "Patient's heart rate has risen to $heartRate BPM and $spo2 oxygen level. Possible heart attack detected! Patient's location: $location";
-  
-  // Show persistent notification
-  showPersistentNotification(alertMessage);
+void _showEmergencyAlert(BuildContext context, int heartRate, int spo2, double latitude, double longitude) async {
+  String address = await getAddressFromLatLng(latitude, longitude); // Get the address
 
-  // Show dialog on top of the current screen (optional)
   showDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
+      final AudioPlayer player = AudioPlayer();
+      Vibration.vibrate(pattern: [500, 1000, 500, 1000], repeat: 0);
+      playAudioFromUrl(player);
+      
       return AlertDialog(
         content: Text(
-          alertMessage,
+          "Patient's heart rate has risen to $heartRate BPM and $spo2 oxygen level. Possible heart attack detected! Patient's location: $address. latitude is: $latitude and longitude is: $longitude",
           style: TextStyle(fontSize: 18),
         ),
         actions: [
